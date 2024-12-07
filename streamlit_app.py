@@ -100,22 +100,26 @@ if st.button("Submit"):
     try:
         memory_messages = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.memory.chat_memory.messages])
 
-        # Step 1: Classify by Product
+               # Step 1: Classify by Product
         product_prompt = (
             f"Based on the user's complaint and the following conversation context:\n"
             f"{memory_messages}\n\n"
-            f"Classify the user's complaint into one of these product categories: {product_categories.tolist()}."
+            f"You are a financial expert. Classify the user's complaint into one of these product categories: {product_categories.tolist()}.\n"
+            f"Respond with the exact product name as listed."
         )
         assigned_product = classify_complaint(chat, product_prompt)
+        st.write(f"Assigned Product: {assigned_product}")
 
         # Step 2: Classify by Sub-product
         subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
         subproduct_prompt = (
             f"Based on the user's complaint about '{assigned_product}' and the following context:\n"
             f"{memory_messages}\n\n"
-            f"Classify the user's complaint into one of these sub-product categories: {subproduct_options.tolist()}."
+            f"You are a financial expert. Classify the user's complaint into one of these sub-product categories: {subproduct_options.tolist()}.\n"
+            f"Respond with the exact sub-product name as listed."
         )
         assigned_subproduct = classify_complaint(chat, subproduct_prompt)
+        st.write(f"Assigned Sub-product: {assigned_subproduct}")
 
         # Step 3: Classify by Issue
         issue_options = df1[
@@ -124,9 +128,11 @@ if st.button("Submit"):
         issue_prompt = (
             f"Based on the user's complaint about '{assigned_product}' -> '{assigned_subproduct}' and the following context:\n"
             f"{memory_messages}\n\n"
-            f"Classify the user's complaint into one of these issue categories: {issue_options.tolist()}."
+            f"You are a financial expert. Classify the user's complaint into one of these issue categories: {issue_options.tolist()}.\n"
+            f"Respond with the exact issue name as listed."
         )
         assigned_issue = classify_complaint(chat, issue_prompt)
+        st.write(f"Assigned Issue: {assigned_issue}")
 
         # Store results
         st.session_state.classification_results = {
