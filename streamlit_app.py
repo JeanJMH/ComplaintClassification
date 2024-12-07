@@ -12,6 +12,7 @@ from langchain_community.agent_toolkits.jira.toolkit import JiraToolkit
 from langchain import hub
 
 
+# Initialize the application
 st.title("💬 Financial Complaint Classifier with Jira Integration and Conversation Tracking")
 st.write("Interact with the chatbot to classify complaints and manage Jira tasks.")
 
@@ -79,34 +80,52 @@ if user_input := st.chat_input("Describe your issue or continue the conversation
         # Step 1: Classify by Product
         product_categories = df1['Product'].unique()
         product_prompt = (
-            f"You are a financial expert assisting with complaints. Classify the issue into one of these product categories: {product_categories.tolist()}."
+            f"You are a financial expert assisting with complaints. "
+            f"Classify the issue into one of these product categories: {product_categories.tolist()}. "
+            "Only respond with the exact product name."
         )
         response_product = chat.predict_messages(
             [{"role": "system", "content": product_prompt}, {"role": "user", "content": user_input}]
         )
         assigned_product = response_product.content.strip()
 
+        # Ensure response is valid
+        if assigned_product not in product_categories:
+            raise ValueError("Invalid Product classification.")
+
         # Step 2: Classify by Sub-product
         subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
         subproduct_prompt = (
-            f"You are a financial expert. Classify the complaint into one of these sub-product categories under '{assigned_product}': {subproduct_options.tolist()}."
+            f"You are a financial expert. "
+            f"Classify the complaint into one of these sub-product categories under '{assigned_product}': {subproduct_options.tolist()}. "
+            "Only respond with the exact sub-product name."
         )
         response_subproduct = chat.predict_messages(
             [{"role": "system", "content": subproduct_prompt}, {"role": "user", "content": user_input}]
         )
         assigned_subproduct = response_subproduct.content.strip()
 
+        # Ensure response is valid
+        if assigned_subproduct not in subproduct_options:
+            raise ValueError("Invalid Sub-product classification.")
+
         # Step 3: Classify by Issue
         issue_options = df1[
             (df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)
         ]['Issue'].unique()
         issue_prompt = (
-            f"You are a financial expert. Classify the complaint into one of these issue categories under '{assigned_product}' and '{assigned_subproduct}': {issue_options.tolist()}."
+            f"You are a financial expert. "
+            f"Classify the complaint into one of these issue categories under '{assigned_product}' and '{assigned_subproduct}': {issue_options.tolist()}. "
+            "Only respond with the exact issue name."
         )
         response_issue = chat.predict_messages(
             [{"role": "system", "content": issue_prompt}, {"role": "user", "content": user_input}]
         )
         assigned_issue = response_issue.content.strip()
+
+        # Ensure response is valid
+        if assigned_issue not in issue_options:
+            raise ValueError("Invalid Issue classification.")
 
         # Add assistant response to memory
         assistant_response = (
@@ -123,9 +142,12 @@ if user_input := st.chat_input("Describe your issue or continue the conversation
             else:
                 st.success(f"Jira Task Created: {jira_result}")
 
+    except ValueError as ve:
+        st.error(f"Classification Error: {ve}")
+        st.chat_message("assistant").write("Could not classify the input. Please provide more specific details.")
     except Exception as e:
         st.error(f"Error during classification: {e}")
-        st.chat_message("assistant").write("Could not classify the product. Please refine your input.")
+        st.chat_message("assistant").write("An unexpected error occurred. Please try again.")
 
 # Display Conversation History
 st.write("### Conversation History")
