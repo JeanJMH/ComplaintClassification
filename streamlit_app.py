@@ -18,6 +18,10 @@ st.write("A chatbot to classify customer complaints and create Jira tasks if nee
 # Initialize Session State
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "product" not in st.session_state:
+    st.session_state.product = None
+if "issue" not in st.session_state:
+    st.session_state.issue = None
 if "classification_started" not in st.session_state:
     st.session_state.classification_started = False
 
@@ -38,18 +42,18 @@ except KeyError:
     st.error("API key missing! Please set 'OPENAI_API_KEY' in your Streamlit secrets.")
     st.stop()
 
-# Helper function to evaluate sufficient details using OpenAI model
-def evaluate_input_details(chat, user_input, product_categories):
+# Helper function to check missing details
+def check_missing_details(chat, user_input, product_categories):
     prompt = (
-        f"You are a helpful assistant analyzing customer complaints. Your task is to determine if the following input contains enough details to proceed:\n\n"
+        f"You are a helpful assistant gathering information to classify customer complaints. "
+        f"Determine if the following input provides details about both a product and an issue:\n\n"
         f"Input: '{user_input}'\n\n"
-        f"Check if the input mentions:\n"
-        f"1. A product (e.g., {', '.join(product_categories)})\n"
-        f"2. A clear problem or issue (e.g., 'stolen', 'fraudulent transactions', 'unauthorized charges').\n\n"
+        f"Products: {', '.join(product_categories)}\n"
+        f"Issues: e.g., 'fraudulent transactions', 'stolen card', 'unauthorized charges'.\n\n"
         f"Respond with one of the following:\n"
-        f"- 'It seems your input is missing details about the product. Could you tell me which product you're referring to (e.g., Credit Card, Savings Account)?'\n"
-        f"- 'It seems your input is missing details about the issue. Could you describe the problem you're experiencing (e.g., fraudulent transactions, stolen card)?'\n"
-        f"- 'Your input seems complete. Let's proceed with the classification process.'"
+        f"- 'Missing: Product'\n"
+        f"- 'Missing: Issue'\n"
+        f"- 'Complete: Both Product and Issue are provided.'"
     )
     response = chat.predict(prompt).strip()
     return response
@@ -64,25 +68,32 @@ if user_input := st.chat_input("Describe your issue:"):
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
-    # Evaluate Input Details
-    product_categories = df1['Product'].unique()
-    evaluation_response = evaluate_input_details(chat, user_input, product_categories)
+    # Step 1: Gather Context
+    if not st.session_state.classification_started:
+        product_categories = df1['Product'].unique()
+        evaluation_response = check_missing_details(chat, user_input, product_categories)
 
-    if "complete" in evaluation_response.lower():
-        st.session_state.classification_started = True
-        st.session_state.chat_history.append({"role": "assistant", "content": "Thank you! Starting the classification process..."})
-        st.chat_message("assistant").write("Thank you! Starting the classification process...")
-
-        # Classification Process
+        if "Missing: Product" in evaluation_response:
+            st.session_state.chat_history.append({"role": "assistant", "content": "Could you specify the product (e.g., 'Credit Card', 'Savings Account')?"})
+            st.chat_message("assistant").write("Could you specify the product (e.g., 'Credit Card', 'Savings Account')?")
+        elif "Missing: Issue" in evaluation_response:
+            st.session_state.chat_history.append({"role": "assistant", "content": "Could you describe the issue (e.g., 'fraudulent transactions', 'stolen card')?"})
+            st.chat_message("assistant").write("Could you describe the issue (e.g., 'fraudulent transactions', 'stolen card')?")
+        elif "Complete" in evaluation_response:
+            st.session_state.chat_history.append({"role": "assistant", "content": "Thank you for providing the necessary details. Starting the classification process now..."})
+            st.chat_message("assistant").write("Thank you for providing the necessary details. Starting the classification process now...")
+            st.session_state.classification_started = True
+    else:
+        # Step 2: Classification Process
         try:
-            # Step 1: Classify by Product
+            # Classify by Product
             response_product = chat.predict(
                 f"You are a financial expert who classifies customer complaints based on these Product categories: {product_categories.tolist()}. "
                 f"Complaint: {user_input}. Respond with the exact product as written there."
             )
             assigned_product = response_product.strip()
 
-            # Step 2: Classify by Sub-product
+            # Classify by Sub-product
             subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
             response_subproduct = chat.predict(
                 f"You are a financial expert who classifies customer complaints based on these Sub-product categories under the product '{assigned_product}': {subproduct_options.tolist()}. "
@@ -90,7 +101,7 @@ if user_input := st.chat_input("Describe your issue:"):
             )
             assigned_subproduct = response_subproduct.strip()
 
-            # Step 3: Classify by Issue
+            # Classify by Issue
             issue_options = df1[(df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)]['Issue'].unique()
             response_issue = chat.predict(
                 f"You are a financial expert who classifies customer complaints based on these Issue categories under the product '{assigned_product}' and sub-product '{assigned_subproduct}': {issue_options.tolist()}. "
@@ -117,9 +128,6 @@ if user_input := st.chat_input("Describe your issue:"):
             error_message = f"Error during classification: {e}"
             st.session_state.chat_history.append({"role": "assistant", "content": error_message})
             st.chat_message("assistant").write(error_message)
-    else:
-        st.session_state.chat_history.append({"role": "assistant", "content": evaluation_response})
-        st.chat_message("assistant").write(evaluation_response)
 
 # Summary Button
 if st.button("Show Classification Summary"):
