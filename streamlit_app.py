@@ -61,9 +61,9 @@ def evaluate_input_details(chat, user_input, memory_messages):
         f"Your task is to determine if the user has provided:\n"
         f"1. A product (e.g., credit card, savings account).\n"
         f"2. A specific issue or problem (e.g., 'fraudulent transactions', 'stolen card').\n\n"
-        f"Respond naturally and warmly to acknowledge provided details, and politely ask for any missing information. "
+        f"Respond naturally and warmly to acknowledge provided details, and politely ask for any missing information, just related with the prduct and issue. "
         f"Be concise but empathetic in your responses."
-        f"Finish to collect information when you have information to clasify the complaint by product and issue"
+        f"Finish to collect information when you have information to clasify the complaint by product and issue, dont ask for adidional information"
     )
     return chat.predict(prompt).strip()
 
