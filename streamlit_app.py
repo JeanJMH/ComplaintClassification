@@ -13,8 +13,8 @@ from langchain import hub
 
 
 # Title and Description
-st.title("💬 Financial Complaint Classifier & Task Manager")
-st.write("Classify customer complaints into Product, Sub-product, and Issue categories, and automatically create Jira tasks.")
+st.title("💬 Financial Complaint Classifier")
+st.write("Classify customer complaints into Product, Sub-product, and Issue categories and create Jira tasks.")
 
 # Load Dataset
 url = "https://raw.githubusercontent.com/JeanJMH/Financial_Classification/main/Classification_data.csv"
@@ -33,49 +33,20 @@ except KeyError:
     st.error("API key missing! Please set 'OPENAI_API_KEY' in your Streamlit secrets.")
     st.stop()
 
-# Initialize Jira API
-try:
-    os.environ["JIRA_API_TOKEN"] = st.secrets["JIRA_API_TOKEN"]
-    os.environ["JIRA_USERNAME"] = "jeanmh@bu.edu"
-    os.environ["JIRA_INSTANCE_URL"] = "https://jmhu.atlassian.net"
-    os.environ["JIRA_CLOUD"] = "True"
-    jira = JiraAPIWrapper()
-    jira_toolkit = JiraToolkit.from_jira_api_wrapper(jira)
-except KeyError:
-    st.error("Jira API credentials missing! Please set 'JIRA_API_TOKEN', 'JIRA_USERNAME', and 'JIRA_INSTANCE_URL' in your Streamlit secrets.")
-    st.stop()
-
 # Helper function for classification
-def classify_complaint(chat, prompt, user_input):
+def classify_complaint(chat, system_prompt, user_input):
     """
     Classify complaints into categories (Product, Sub-product, or Issue) using the ChatOpenAI model.
     """
     try:
-        response = chat.predict(
-            prompt=f"{prompt}\nUser complaint: '{user_input}'",
-        )
-        return response.strip()
+        # Using the messages format required by the ChatOpenAI model
+        response = chat.predict_messages([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_input}
+        ])
+        return response.content.strip()
     except Exception as e:
         st.error(f"Error during classification: {e}")
-        return None
-
-# Helper function to create Jira task
-def create_jira_task(summary, description, priority="High"):
-    """
-    Create a Jira task using the Jira API.
-    """
-    try:
-        task_details = {
-            "project": {"key": "LLMTS"},
-            "summary": summary,
-            "description": description,
-            "issuetype": {"name": "Task"},
-            "priority": {"name": priority},
-        }
-        task = jira_toolkit.jira_api.create_issue(fields=task_details)
-        return task.key
-    except Exception as e:
-        st.error(f"Error during Jira task creation: {e}")
         return None
 
 # Chat Input and Classification Workflow
@@ -136,21 +107,32 @@ if client_complaint := st.chat_input("Describe your issue:"):
         f"Classification Results:\n- **Product**: {assigned_product}\n- **Sub-product**: {assigned_subproduct}\n- **Issue**: {assigned_issue}"
     )
 
-    # Create Jira Task
-    st.write("Creating Jira Task...")
-    task_summary = f"Complaint about {assigned_product} ({assigned_subproduct})"
-    task_description = f"User complaint: {client_complaint}\nClassified as:\n- Product: {assigned_product}\n- Sub-product: {assigned_subproduct}\n- Issue: {assigned_issue}"
-    priority = "Highest" if "fraud" in assigned_issue.lower() else "High"
+    # Jira Task Creation
+    if st.button("Create Jira Task"):
+        try:
+            # Setup Jira API credentials
+            os.environ["JIRA_API_TOKEN"] = st.secrets["JIRA_API_TOKEN"]
+            os.environ["JIRA_USERNAME"] = "jeanmh@bu.edu"
+            os.environ["JIRA_INSTANCE_URL"] = "https://jmhu.atlassian.net"
 
-    jira_task_key = create_jira_task(task_summary, task_description, priority)
-    if jira_task_key:
-        st.success(f"Jira Task Created Successfully! Task Key: {jira_task_key}")
-    else:
-        st.error("Failed to create Jira task. Please try again later.")
+            # Define Jira task details
+            jira_description = f"Complaint: {client_complaint}\nProduct: {assigned_product}\nSub-product: {assigned_subproduct}\nIssue: {assigned_issue}"
+            summary = f"Issue with {assigned_product} - {assigned_subproduct}"
+            priority = "Highest" if "fraud" in client_complaint.lower() else "High"
 
-# Summary Button
-if st.button("Show Classification Summary"):
-    st.write("### Classification Summary")
-    st.write(f"- **Product**: {assigned_product}")
-    st.write(f"- **Sub-product**: {assigned_subproduct}")
-    st.write(f"- **Issue**: {assigned_issue}")
+            # Initialize Jira Toolkit
+            jira = JiraAPIWrapper()
+            toolkit = JiraToolkit.from_jira_api_wrapper(jira)
+            tools = toolkit.get_tools()
+
+            # Create Jira task
+            response = jira.create_issue(
+                project_key="LLMTS",
+                summary=summary,
+                description=jira_description,
+                issuetype="Task",
+                priority=priority
+            )
+            st.success(f"Jira task created successfully! Task ID: {response['key']}")
+        except Exception as e:
+            st.error(f"Error creating Jira task: {e}")
