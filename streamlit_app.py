@@ -11,21 +11,20 @@ from langchain_community.utilities.jira import JiraAPIWrapper
 from langchain_community.agent_toolkits.jira.toolkit import JiraToolkit
 from langchain import hub
 
-# Title and Description
 st.title("💬 Financial Complaint Classifier")
 st.write("A chatbot to classify customer complaints and create Jira tasks if needed.")
 
 # Initialize Session State
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+if "memory" not in st.session_state:
+    # Initialize memory with conversation history
+    st.session_state.memory = ConversationBufferWindowMemory(memory_key="chat_history", k=10, return_messages=True)
+
 if "classification_started" not in st.session_state:
     st.session_state.classification_started = False
-if "memory" not in st.session_state:
-    st.session_state.memory = ConversationBufferWindowMemory(
-        memory_key="chat_history", return_messages=True
-    )
+
 if "product_described" not in st.session_state:
     st.session_state.product_described = False
+
 if "problem_described" not in st.session_state:
     st.session_state.problem_described = False
 
@@ -38,41 +37,52 @@ except Exception as e:
     st.error(f"Error loading dataset: {e}")
     st.stop()
 
+product_categories = df1['Product'].unique()
+
 # Initialize OpenAI Chat
 try:
-    chat = ChatOpenAI(openai_api_key=st.secrets["OPENAI_API_KEY"], model="gpt-4o-mini")
+    model_type = "gpt-4o-mini"
+    chat = ChatOpenAI(openai_api_key=st.secrets["OPENAI_API_KEY"], model=model_type)
 except KeyError:
     st.error("API key missing! Please set 'OPENAI_API_KEY' in your Streamlit secrets.")
     st.stop()
 
-# Display Chat History
-if st.session_state.memory.chat_memory.messages:
-    for message in st.session_state.memory.chat_memory.messages:
-        st.chat_message(message["role"]).write(message["content"])
+# Helper function to analyze input details
+def evaluate_input_details(chat, user_input, memory_context):
+    """
+    Analyze user input to identify missing details using memory context.
+    """
+    prompt = (
+        f"You are a helpful assistant analyzing customer complaints. Based on the conversation so far:\n"
+        f"{memory_context}\n\n"
+        f"The user just mentioned:\n'{user_input}'\n\n"
+        f"Your task is to determine if the user has provided:\n"
+        f"1. A product (e.g., credit card, savings account).\n"
+        f"2. A specific issue or problem (e.g., 'fraudulent transactions', 'stolen card').\n\n"
+        f"Respond naturally and warmly to acknowledge provided details, and politely ask for any missing information. "
+        f"Be concise but empathetic in your responses."
+    )
+    return chat.predict(prompt).strip()
 
 # Chat Input and Workflow
+st.write("### Chat History")
+for message in st.session_state.memory.chat_memory.messages:
+    st.chat_message(message.role).write(message.content)
+
 if user_input := st.chat_input("Describe your issue:"):
     st.session_state.memory.chat_memory.add_message({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
-    # Prompt to analyze user input
-    product_categories = df1['Product'].unique()
-    prompt = (
-        f"You are a helpful assistant gathering information about financial complaints. Based on the following input:\n\n"
-        f"'{user_input}'\n\n"
-        f"Check if the user has specified:\n"
-        f"1. A product (e.g., {', '.join(product_categories)}).\n"
-        f"2. A problem or issue (e.g., 'stolen card', 'fraudulent transactions').\n\n"
-        f"Respond naturally, asking only for missing information. If both details are present, acknowledge and prepare to proceed."
-    )
-    response = chat.predict(prompt).strip()
-    st.session_state.memory.chat_memory.add_message({"role": "assistant", "content": response})
-    st.chat_message("assistant").write(response)
+    # Evaluate Input Details
+    memory_context = st.session_state.memory.chat_memory.get_buffer()
+    evaluation_response = evaluate_input_details(chat, user_input, memory_context)
+    st.session_state.memory.chat_memory.add_message({"role": "assistant", "content": evaluation_response})
+    st.chat_message("assistant").write(evaluation_response)
 
-    # Update session state based on response
-    if "product" in response.lower():
+    # Update flags based on response
+    if "product" in evaluation_response.lower():
         st.session_state.product_described = True
-    if "issue" in response.lower():
+    if "issue" in evaluation_response.lower():
         st.session_state.problem_described = True
 
 # Classification Process Trigger
@@ -83,26 +93,30 @@ if st.session_state.product_described and st.session_state.problem_described:
 
             # Classification Process
             try:
+                memory_context = st.session_state.memory.chat_memory.get_buffer()
+
                 # Step 1: Classify by Product
                 response_product = chat.predict(
-                    f"You are a financial expert who classifies customer complaints based on these Product categories: {product_categories.tolist()}. "
-                    f"Complaint: {user_input}. Respond with the exact product as written there."
+                    f"Based on this conversation: {memory_context}\n"
+                    f"Classify the complaint by matching it to one of these Product categories: {product_categories.tolist()}."
                 )
                 assigned_product = response_product.strip()
 
                 # Step 2: Classify by Sub-product
                 subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
                 response_subproduct = chat.predict(
-                    f"You are a financial expert who classifies customer complaints based on these Sub-product categories under the product '{assigned_product}': {subproduct_options.tolist()}. "
-                    f"Complaint: {user_input}. Respond with the exact sub-product as written there."
+                    f"Based on this conversation: {memory_context}\n"
+                    f"Classify the complaint into one of these Sub-product categories under '{assigned_product}': {subproduct_options.tolist()}."
                 )
                 assigned_subproduct = response_subproduct.strip()
 
                 # Step 3: Classify by Issue
-                issue_options = df1[(df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)]['Issue'].unique()
+                issue_options = df1[
+                    (df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)
+                ]['Issue'].unique()
                 response_issue = chat.predict(
-                    f"You are a financial expert who classifies customer complaints based on these Issue categories under the product '{assigned_product}' and sub-product '{assigned_subproduct}': {issue_options.tolist()}. "
-                    f"Complaint: {user_input}. Respond with the exact issue as written there."
+                    f"Based on this conversation: {memory_context}\n"
+                    f"Classify the complaint into one of these Issue categories under '{assigned_product}' and '{assigned_subproduct}': {issue_options.tolist()}."
                 )
                 assigned_issue = response_issue.strip()
 
@@ -120,3 +134,10 @@ if st.session_state.product_described and st.session_state.problem_described:
                 error_message = f"Error during classification: {e}"
                 st.session_state.memory.chat_memory.add_message({"role": "assistant", "content": error_message})
                 st.chat_message("assistant").write(error_message)
+
+# Summary Button
+if st.button("Show Classification Summary"):
+    st.write("### Classification Summary")
+    st.write(f"- **Product**: {st.session_state.get('assigned_product', 'N/A')}")
+    st.write(f"- **Sub-product**: {st.session_state.get('assigned_subproduct', 'N/A')}")
+    st.write(f"- **Issue**: {st.session_state.get('assigned_issue', 'N/A')}")
