@@ -63,6 +63,7 @@ def evaluate_input_details(chat, user_input, memory_messages):
         f"2. A specific issue or problem (e.g., 'fraudulent transactions', 'stolen card').\n\n"
         f"Respond naturally and warmly to acknowledge provided details, and politely ask for any missing information. "
         f"Be concise but empathetic in your responses."
+        f"Finish the conversation when you have enough information to clasify the problem"
     )
     return chat.predict(prompt).strip()
 
