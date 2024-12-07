@@ -10,7 +10,6 @@ from langchain.agents import AgentExecutor, create_react_agent
 from langchain_community.utilities.jira import JiraAPIWrapper
 from langchain_community.agent_toolkits.jira.toolkit import JiraToolkit
 from langchain import hub
-
 # Title and Description
 st.title("💬 Financial Complaint Classifier")
 st.write("A chatbot to classify customer complaints and create Jira tasks if needed.")
@@ -22,11 +21,11 @@ if "memory" not in st.session_state:
 if "classification_results" not in st.session_state:
     st.session_state.classification_results = {}
 
-if "information_complete" not in st.session_state:
-    st.session_state.information_complete = False
-
 if "conversation_closed" not in st.session_state:
     st.session_state.conversation_closed = False
+
+if "ready_to_submit" not in st.session_state:
+    st.session_state.ready_to_submit = False
 
 # Load Dataset
 url = "https://raw.githubusercontent.com/JeanJMH/Financial_Classification/main/Classification_data.csv"
@@ -62,8 +61,7 @@ def evaluate_input_details(chat, user_input, memory_messages):
         f"1. A product (e.g., credit card, savings account).\n"
         f"2. A specific issue or problem (e.g., 'fraudulent transactions', 'stolen card').\n\n"
         f"Respond naturally and warmly to acknowledge provided details and politely ask for any missing information. "
-        f"Conclude data collection once sufficient details for classification (product and issue) are provided. "
-        f"If the user does not mention any issue, politely close the conversation."
+        f"Conclude data collection once sufficient details for classification (product and issue) are provided."
     )
     return chat.predict(prompt).strip()
 
@@ -90,66 +88,68 @@ if not st.session_state.conversation_closed:
         st.session_state.memory.chat_memory.add_message({"role": "assistant", "content": evaluation_response})
         st.chat_message("assistant").write(evaluation_response)
 
-        # Update flag for completeness
+        # Check if ready to submit
         if "sufficient details" in evaluation_response.lower():
-            st.session_state.information_complete = True
-
-# Classification Button
-if st.session_state.information_complete:
-    if st.button("Submit"):
-        try:
-            memory_messages = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.memory.chat_memory.messages])
-
-            # Step 1: Classify by Product
-            product_prompt = (
-                f"Based on the user's complaint and the following conversation context:\n"
-                f"{memory_messages}\n\n"
-                f"Classify the user's complaint into one of these product categories: {product_categories.tolist()}."
+            st.session_state.ready_to_submit = True
+            st.chat_message("assistant").write(
+                "Thank you! This is the summary of your complaint. Please review the summary below and press the 'Submit' button to finalize."
             )
-            assigned_product = classify_complaint(chat, product_prompt)
 
-            # Step 2: Classify by Sub-product
-            subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
-            subproduct_prompt = (
-                f"Based on the user's complaint about '{assigned_product}' and the following context:\n"
-                f"{memory_messages}\n\n"
-                f"Classify the user's complaint into one of these sub-product categories: {subproduct_options.tolist()}."
-            )
-            assigned_subproduct = classify_complaint(chat, subproduct_prompt)
+# Submit Button Always Visible
+if st.button("Submit"):
+    try:
+        memory_messages = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.memory.chat_memory.messages])
 
-            # Step 3: Classify by Issue
-            issue_options = df1[
-                (df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)
-            ]['Issue'].unique()
-            issue_prompt = (
-                f"Based on the user's complaint about '{assigned_product}' -> '{assigned_subproduct}' and the following context:\n"
-                f"{memory_messages}\n\n"
-                f"Classify the user's complaint into one of these issue categories: {issue_options.tolist()}."
-            )
-            assigned_issue = classify_complaint(chat, issue_prompt)
+        # Step 1: Classify by Product
+        product_prompt = (
+            f"Based on the user's complaint and the following conversation context:\n"
+            f"{memory_messages}\n\n"
+            f"Classify the user's complaint into one of these product categories: {product_categories.tolist()}."
+        )
+        assigned_product = classify_complaint(chat, product_prompt)
 
-            # Store results
-            st.session_state.classification_results = {
-                "Product": assigned_product,
-                "Sub-product": assigned_subproduct,
-                "Issue": assigned_issue,
-            }
+        # Step 2: Classify by Sub-product
+        subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
+        subproduct_prompt = (
+            f"Based on the user's complaint about '{assigned_product}' and the following context:\n"
+            f"{memory_messages}\n\n"
+            f"Classify the user's complaint into one of these sub-product categories: {subproduct_options.tolist()}."
+        )
+        assigned_subproduct = classify_complaint(chat, subproduct_prompt)
 
-            # Display Results and Close Conversation
-            classification_summary = (
-                f"Classification Results:\n"
-                f"- **Product**: {assigned_product}\n"
-                f"- **Sub-product**: {assigned_subproduct}\n"
-                f"- **Issue**: {assigned_issue}\n\n"
-                f"Thank you! Your information has been submitted. The support team will review your case."
-            )
-            st.session_state.memory.chat_memory.add_message({"role": "assistant", "content": classification_summary})
-            st.chat_message("assistant").write(classification_summary)
-            st.session_state.conversation_closed = True
+        # Step 3: Classify by Issue
+        issue_options = df1[
+            (df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)
+        ]['Issue'].unique()
+        issue_prompt = (
+            f"Based on the user's complaint about '{assigned_product}' -> '{assigned_subproduct}' and the following context:\n"
+            f"{memory_messages}\n\n"
+            f"Classify the user's complaint into one of these issue categories: {issue_options.tolist()}."
+        )
+        assigned_issue = classify_complaint(chat, issue_prompt)
 
-        except Exception as e:
-            error_message = f"Error during classification: {e}"
-            st.chat_message("assistant").write(error_message)
+        # Store results
+        st.session_state.classification_results = {
+            "Product": assigned_product,
+            "Sub-product": assigned_subproduct,
+            "Issue": assigned_issue,
+        }
+
+        # Display Results and Close Conversation
+        classification_summary = (
+            f"Classification Results:\n"
+            f"- **Product**: {assigned_product}\n"
+            f"- **Sub-product**: {assigned_subproduct}\n"
+            f"- **Issue**: {assigned_issue}\n\n"
+            f"Thank you for submitting your complaint. Our support team will get back to you shortly!"
+        )
+        st.session_state.memory.chat_memory.add_message({"role": "assistant", "content": classification_summary})
+        st.chat_message("assistant").write(classification_summary)
+        st.session_state.conversation_closed = True
+
+    except Exception as e:
+        error_message = f"Error during classification: {e}"
+        st.chat_message("assistant").write(error_message)
 
 # Summary Button
 if st.button("Show Classification Summary"):
