@@ -47,14 +47,15 @@ def evaluate_input_details(chat, user_input, memory_messages):
     Analyze user input to identify missing details using memory context.
     """
     prompt = (
-        f"You are a helpful assistant analyzing customer complaints. Based on the conversation so far:\n"
+        f"You are a helpful assistant analyzing customer complaints for the first interaction always give greetings." 
+        f"Based on the conversation so far:\n"
         f"{memory_messages}\n\n"
         f"The user just mentioned:\n'{user_input}'\n\n"
         f"Your task is to determine if the user has provided:\n"
         f"1. A product (e.g., credit card, savings account).\n"
         f"2. A specific issue or problem (e.g., 'fraudulent transactions', 'stolen card').\n\n"
-        f"Respond naturally and warmly to acknowledge provided details and politely ask for any missing information, but just related with the product and issue. "
-        f"Finish collecting information when you have sufficient details for classification by product and issue."
+        f"Respond naturally and warmly to acknowledge provided details and politely ask for any missing information, but just enough to clasigy the complaint by product and issue. "
+        f"Finish collecting information when you have sufficient details for classify the complaint by product and issue."
     )
     return chat.predict(prompt).strip()
 
