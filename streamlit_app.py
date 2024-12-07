@@ -12,9 +12,9 @@ from langchain_community.agent_toolkits.jira.toolkit import JiraToolkit
 from langchain import hub
 
 
-# Initialize the application
-st.title("💬 Financial Complaint Classifier with Jira Integration and Conversation Tracking")
-st.write("Interact with the chatbot to classify complaints and manage Jira tasks.")
+# Title and Description
+st.title("💬 Financial Complaint Classifier")
+st.write("Classify customer complaints into Product, Sub-product, and Issue categories and create Jira tasks if needed.")
 
 # Load Dataset
 url = "https://raw.githubusercontent.com/JeanJMH/Financial_Classification/main/Classification_data.csv"
@@ -33,126 +33,110 @@ except KeyError:
     st.error("API key missing! Please set 'OPENAI_API_KEY' in your Streamlit secrets.")
     st.stop()
 
-# Initialize memory in session state
-if "memory" not in st.session_state:
-    st.session_state.memory = ConversationBufferWindowMemory(memory_key="chat_history", return_messages=True)
+# Helper function for evaluating input sufficiency
+def evaluate_input_sufficiency(chat, input_text, product_categories):
+    """
+    Use a language model to evaluate if the input text has enough information for classification.
+    """
+    evaluation_prompt = (
+        f"You are an intelligent assistant. Evaluate if the following customer complaint contains enough "
+        f"information to classify the issue into a product and problem category. "
+        f"The product categories are: {product_categories.tolist()}.\n\n"
+        f"The complaint is: '{input_text}'.\n\n"
+        f"Respond with 'Sufficient' if it contains enough information, or 'Insufficient' "
+        f"if it lacks clarity or detail."
+    )
+    
+    response = chat.predict_messages([
+        {"role": "system", "content": evaluation_prompt},
+        {"role": "user", "content": input_text}
+    ])
+    return response.content.strip()
 
-# Initialize Jira
-try:
-    os.environ["JIRA_API_TOKEN"] = st.secrets["JIRA_API_TOKEN"]
-    os.environ["JIRA_USERNAME"] = "jeanmh@bu.edu"
-    os.environ["JIRA_INSTANCE_URL"] = "https://jmhu.atlassian.net"
-    jira = JiraAPIWrapper()
-    toolkit = JiraToolkit.from_jira_api_wrapper(jira)
-    tools = toolkit.get_tools()
-except KeyError:
-    st.warning("Jira API keys are missing. Jira task creation will be disabled.")
+# Helper function for classification
+def classify_complaint(chat, prompt):
+    """
+    Classify complaints into categories (Product, Sub-product, or Issue) using the ChatOpenAI model.
+    """
+    response = chat.predict_messages([
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": client_complaint}
+    ])
+    return response.content.strip()
 
-# Helper function to create a Jira task
-def create_jira_task(product, sub_product, issue, user_description):
-    try:
-        task_summary = f"Complaint about {product} - {sub_product}"
-        task_description = (
-            f"Issue: {issue}\n"
-            f"User Description: {user_description}"
-        )
-        task_priority = "High" if "fraud" in user_description.lower() else "Medium"
-        question = (
-            f"Create a Jira task with the following details:\n"
-            f"Summary: {task_summary}\n"
-            f"Description: {task_description}\n"
-            f"Priority: {task_priority}\n"
-            f"Project: LLMTS"
-        )
-        agent = toolkit.create_agent(chat, tools)
-        result = agent.invoke({"input": question})
-        return result
-    except Exception as e:
-        return f"Error creating Jira task: {e}"
+# Chat Input and Workflow
+if client_complaint := st.chat_input("Describe your issue:"):
+    st.chat_message("user").write(client_complaint)
 
-# Chat Input and Classification Workflow
-if user_input := st.chat_input("Describe your issue or continue the conversation:"):
-    # Add user message to memory
-    st.session_state.memory.chat_memory.add_user_message(user_input)
-    st.chat_message("user").write(user_input)
+    # Evaluate input sufficiency
+    product_categories = df1['Product'].unique()
+    sufficiency_result = evaluate_input_sufficiency(chat, client_complaint, product_categories)
 
-    try:
+    if sufficiency_result.lower() == "sufficient":
+        st.chat_message("assistant").write("Thank you! Starting the classification process...")
+
         # Step 1: Classify by Product
-        product_categories = df1['Product'].unique()
         product_prompt = (
-            f"You are a financial expert assisting with complaints. "
-            f"Classify the issue into one of these product categories: {product_categories.tolist()}. "
-            "Only respond with the exact product name."
+            f"You are a financial expert who classifies customer complaints based on these Product categories: {product_categories.tolist()}. "
+            "Respond with the exact product as written there."
         )
-        response_product = chat.predict_messages(
-            [{"role": "system", "content": product_prompt}, {"role": "user", "content": user_input}]
-        )
-        assigned_product = response_product.content.strip()
-
-        # Ensure response is valid
-        if assigned_product not in product_categories:
-            raise ValueError("Invalid Product classification.")
+        assigned_product = classify_complaint(chat, product_prompt)
+        st.write(f"Assigned Product: {assigned_product}")
 
         # Step 2: Classify by Sub-product
         subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
         subproduct_prompt = (
-            f"You are a financial expert. "
-            f"Classify the complaint into one of these sub-product categories under '{assigned_product}': {subproduct_options.tolist()}. "
-            "Only respond with the exact sub-product name."
+            f"You are a financial expert who classifies customer complaints based on these Sub-product categories under the product '{assigned_product}': {subproduct_options.tolist()}. "
+            "Respond with the exact sub-product as written there."
         )
-        response_subproduct = chat.predict_messages(
-            [{"role": "system", "content": subproduct_prompt}, {"role": "user", "content": user_input}]
-        )
-        assigned_subproduct = response_subproduct.content.strip()
-
-        # Ensure response is valid
-        if assigned_subproduct not in subproduct_options:
-            raise ValueError("Invalid Sub-product classification.")
+        assigned_subproduct = classify_complaint(chat, subproduct_prompt)
+        st.write(f"Assigned Sub-product: {assigned_subproduct}")
 
         # Step 3: Classify by Issue
         issue_options = df1[
             (df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)
         ]['Issue'].unique()
         issue_prompt = (
-            f"You are a financial expert. "
-            f"Classify the complaint into one of these issue categories under '{assigned_product}' and '{assigned_subproduct}': {issue_options.tolist()}. "
-            "Only respond with the exact issue name."
+            f"You are a financial expert who classifies customer complaints based on these Issue categories under the product '{assigned_product}' and sub-product '{assigned_subproduct}': {issue_options.tolist()}. "
+            "Respond with the exact issue as written there."
         )
-        response_issue = chat.predict_messages(
-            [{"role": "system", "content": issue_prompt}, {"role": "user", "content": user_input}]
-        )
-        assigned_issue = response_issue.content.strip()
+        assigned_issue = classify_complaint(chat, issue_prompt)
+        st.write(f"Assigned Issue: {assigned_issue}")
 
-        # Ensure response is valid
-        if assigned_issue not in issue_options:
-            raise ValueError("Invalid Issue classification.")
-
-        # Add assistant response to memory
-        assistant_response = (
+        # Display Classification Results
+        st.chat_message("assistant").write(
             f"Classification Results:\n- **Product**: {assigned_product}\n- **Sub-product**: {assigned_subproduct}\n- **Issue**: {assigned_issue}"
         )
-        st.session_state.memory.chat_memory.add_ai_message(assistant_response)
-        st.chat_message("assistant").write(assistant_response)
 
-        # Optional: Create Jira Task
+        # Option to create a Jira task
         if st.button("Create Jira Task"):
-            jira_result = create_jira_task(assigned_product, assigned_subproduct, assigned_issue, user_input)
-            if "Error" in jira_result:
-                st.error(jira_result)
-            else:
-                st.success(f"Jira Task Created: {jira_result}")
+            st.write("Starting Jira task creation process...")
+            try:
+                # Setup Jira API credentials
+                os.environ["JIRA_API_TOKEN"] = st.secrets["JIRA_API_TOKEN"]
+                os.environ["JIRA_USERNAME"] = "jeanmh@bu.edu"
+                os.environ["JIRA_INSTANCE_URL"] = "https://jmhu.atlassian.net"
+                os.environ["JIRA_CLOUD"] = "True"
 
-    except ValueError as ve:
-        st.error(f"Classification Error: {ve}")
-        st.chat_message("assistant").write("Could not classify the input. Please provide more specific details.")
-    except Exception as e:
-        st.error(f"Error during classification: {e}")
-        st.chat_message("assistant").write("An unexpected error occurred. Please try again.")
+                # Define Jira task details
+                summary = f"Issue with {assigned_product} - {assigned_subproduct}"
+                description = f"Customer reported an issue: {client_complaint}. Classified as:\n- Product: {assigned_product}\n- Sub-product: {assigned_subproduct}\n- Issue: {assigned_issue}."
+                priority = "High" if "fraud" in client_complaint.lower() else "Medium"
 
-# Display Conversation History
-st.write("### Conversation History")
-for message in st.session_state.memory.chat_memory.messages:
-    if message.type == "user":
-        st.chat_message("user").write(message.content)
-    elif message.type == "assistant":
-        st.chat_message("assistant").write(message.content)
+                jira = JiraAPIWrapper()
+                toolkit = JiraToolkit.from_jira_api_wrapper(jira)
+                tools = toolkit.get_tools()
+
+                agent = create_react_agent(chat, tools, hub.pull("hwchase17/react"))
+                agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+                jira_task = agent_executor.invoke({"input": f"Create a Jira task in the project LLMTS. Summary: {summary}. Description: {description}. Priority: {priority}."})
+                st.success("Jira task created successfully!")
+                st.write(jira_task)
+            except Exception as e:
+                st.error(f"Error during Jira task creation: {e}")
+    else:
+        st.chat_message("assistant").write(
+            "It seems your input lacks sufficient details. Could you specify the product (e.g., 'Credit Card', 'Savings Account') "
+            "and describe the issue more clearly?"
+        )
