@@ -18,12 +18,14 @@ st.write("A chatbot to classify customer complaints and create Jira tasks if nee
 # Initialize Session State
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "classification_started" not in st.session_state:
+    st.session_state.classification_started = False
+if "context_collected" not in st.session_state:
+    st.session_state.context_collected = False
 if "product" not in st.session_state:
     st.session_state.product = None
 if "issue" not in st.session_state:
     st.session_state.issue = None
-if "classification_started" not in st.session_state:
-    st.session_state.classification_started = False
 
 # Load Dataset
 url = "https://raw.githubusercontent.com/JeanJMH/Financial_Classification/main/Classification_data.csv"
@@ -53,9 +55,10 @@ def check_missing_details(chat, user_input, product_categories):
         f"Respond with one of the following:\n"
         f"- 'Missing: Product'\n"
         f"- 'Missing: Issue'\n"
-        f"- 'Complete: Both Product and Issue are provided.'"
+        f"- 'Complete: Both Product and Issue are provided.'\n\n"
+        f"Additionally, suggest the next step for the user to provide the missing details."
     )
-    response = chat.predict(prompt).strip()
+    response = chat.predict(prompt, max_tokens=100).strip()
     return response
 
 # Display Chat History
@@ -63,30 +66,35 @@ st.write("### Chat History")
 for message in st.session_state.chat_history:
     st.chat_message(message["role"]).write(message["content"])
 
-# Chat Input and Workflow
-if user_input := st.chat_input("Describe your issue:"):
-    st.session_state.chat_history.append({"role": "user", "content": user_input})
-    st.chat_message("user").write(user_input)
+# Chat Input for Context Collection
+if not st.session_state.context_collected:
+    if user_input := st.chat_input("Describe your issue:"):
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        st.chat_message("user").write(user_input)
 
-    # Step 1: Gather Context
-    if not st.session_state.classification_started:
+        # Check for missing details
         product_categories = df1['Product'].unique()
         evaluation_response = check_missing_details(chat, user_input, product_categories)
 
-        if "Missing: Product" in evaluation_response:
-            st.session_state.chat_history.append({"role": "assistant", "content": "Could you specify the product (e.g., 'Credit Card', 'Savings Account')?"})
-            st.chat_message("assistant").write("Could you specify the product (e.g., 'Credit Card', 'Savings Account')?")
-        elif "Missing: Issue" in evaluation_response:
-            st.session_state.chat_history.append({"role": "assistant", "content": "Could you describe the issue (e.g., 'fraudulent transactions', 'stolen card')?"})
-            st.chat_message("assistant").write("Could you describe the issue (e.g., 'fraudulent transactions', 'stolen card')?")
-        elif "Complete" in evaluation_response:
-            st.session_state.chat_history.append({"role": "assistant", "content": "Thank you for providing the necessary details. Starting the classification process now..."})
-            st.chat_message("assistant").write("Thank you for providing the necessary details. Starting the classification process now...")
-            st.session_state.classification_started = True
-    else:
-        # Step 2: Classification Process
+        if "Complete" in evaluation_response:
+            st.session_state.context_collected = True
+            st.session_state.chat_history.append({"role": "assistant", "content": "Thank you! You have provided sufficient details. Click the 'Start Classification' button to begin."})
+            st.chat_message("assistant").write("Thank you! You have provided sufficient details. Click the 'Start Classification' button to begin.")
+        else:
+            st.session_state.chat_history.append({"role": "assistant", "content": evaluation_response})
+            st.chat_message("assistant").write(evaluation_response)
+
+# Button to Start Classification Process
+if st.session_state.context_collected and not st.session_state.classification_started:
+    if st.button("Start Classification"):
+        st.session_state.classification_started = True
+
+        # Classification Process
         try:
+            user_input = st.session_state.chat_history[-1]["content"]
+
             # Classify by Product
+            product_categories = df1['Product'].unique()
             response_product = chat.predict(
                 f"You are a financial expert who classifies customer complaints based on these Product categories: {product_categories.tolist()}. "
                 f"Complaint: {user_input}. Respond with the exact product as written there."
