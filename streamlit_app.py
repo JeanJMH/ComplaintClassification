@@ -11,6 +11,8 @@ from langchain_community.utilities.jira import JiraAPIWrapper
 from langchain_community.agent_toolkits.jira.toolkit import JiraToolkit
 from langchain import hub
 
+
+# Title and Description
 st.title("💬 Financial Complaint Classifier")
 st.write("A chatbot to classify customer complaints and create Jira tasks if needed.")
 
@@ -48,13 +50,13 @@ except KeyError:
     st.stop()
 
 # Helper function to analyze input details
-def evaluate_input_details(chat, user_input, memory_context):
+def evaluate_input_details(chat, user_input, memory_messages):
     """
     Analyze user input to identify missing details using memory context.
     """
     prompt = (
         f"You are a helpful assistant analyzing customer complaints. Based on the conversation so far:\n"
-        f"{memory_context}\n\n"
+        f"{memory_messages}\n\n"
         f"The user just mentioned:\n'{user_input}'\n\n"
         f"Your task is to determine if the user has provided:\n"
         f"1. A product (e.g., credit card, savings account).\n"
@@ -67,15 +69,17 @@ def evaluate_input_details(chat, user_input, memory_context):
 # Chat Input and Workflow
 st.write("### Chat History")
 for message in st.session_state.memory.chat_memory.messages:
-    st.chat_message(message.role).write(message.content)
+    st.chat_message(message["role"]).write(message["content"])
 
 if user_input := st.chat_input("Describe your issue:"):
     st.session_state.memory.chat_memory.add_message({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
+    # Get memory messages for context
+    memory_messages = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.memory.chat_memory.messages])
+
     # Evaluate Input Details
-    memory_context = st.session_state.memory.chat_memory.get_buffer()
-    evaluation_response = evaluate_input_details(chat, user_input, memory_context)
+    evaluation_response = evaluate_input_details(chat, user_input, memory_messages)
     st.session_state.memory.chat_memory.add_message({"role": "assistant", "content": evaluation_response})
     st.chat_message("assistant").write(evaluation_response)
 
@@ -93,11 +97,11 @@ if st.session_state.product_described and st.session_state.problem_described:
 
             # Classification Process
             try:
-                memory_context = st.session_state.memory.chat_memory.get_buffer()
+                memory_messages = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.memory.chat_memory.messages])
 
                 # Step 1: Classify by Product
                 response_product = chat.predict(
-                    f"Based on this conversation: {memory_context}\n"
+                    f"Based on this conversation: {memory_messages}\n"
                     f"Classify the complaint by matching it to one of these Product categories: {product_categories.tolist()}."
                 )
                 assigned_product = response_product.strip()
@@ -105,7 +109,7 @@ if st.session_state.product_described and st.session_state.problem_described:
                 # Step 2: Classify by Sub-product
                 subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
                 response_subproduct = chat.predict(
-                    f"Based on this conversation: {memory_context}\n"
+                    f"Based on this conversation: {memory_messages}\n"
                     f"Classify the complaint into one of these Sub-product categories under '{assigned_product}': {subproduct_options.tolist()}."
                 )
                 assigned_subproduct = response_subproduct.strip()
@@ -115,7 +119,7 @@ if st.session_state.product_described and st.session_state.problem_described:
                     (df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)
                 ]['Issue'].unique()
                 response_issue = chat.predict(
-                    f"Based on this conversation: {memory_context}\n"
+                    f"Based on this conversation: {memory_messages}\n"
                     f"Classify the complaint into one of these Issue categories under '{assigned_product}' and '{assigned_subproduct}': {issue_options.tolist()}."
                 )
                 assigned_issue = response_issue.strip()
