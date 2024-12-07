@@ -12,6 +12,7 @@ from langchain_community.agent_toolkits.jira.toolkit import JiraToolkit
 from langchain import hub
 
 
+# Title and Description
 st.title("💬 Financial Complaint Classifier")
 st.write("Classify customer complaints into Product, Sub-product, and Issue categories.")
 
@@ -32,46 +33,48 @@ except KeyError:
     st.error("API key missing! Please set 'OPENAI_API_KEY' in your Streamlit secrets.")
     st.stop()
 
+# Helper function for classification
+def classify_complaint(chat, prompt):
+    """
+    Classify complaints into categories (Product, Sub-product, or Issue) using the ChatOpenAI model.
+    """
+    response = chat([
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": client_complaint}
+    ])
+    return response.content.strip()
+
 # Chat Input and Classification Workflow
 if client_complaint := st.chat_input("Describe your issue:"):
     st.chat_message("user").write(client_complaint)
 
     # Step 1: Classify by Product
     product_categories = df1['Product'].unique()
-    response_product = chat({"messages": [
-        {"role": "system", "content": (
-            f"You are a financial expert who classifies customer complaints based on these Product categories: {product_categories.tolist()}. "
-            "Respond with the exact product as written there."
-        )},
-        {"role": "user", "content": f"This is my issue: '{client_complaint}'."}
-    ]})
-    assigned_product = response_product.strip()
+    product_prompt = (
+        f"You are a financial expert who classifies customer complaints based on these Product categories: {product_categories.tolist()}. "
+        "Respond with the exact product as written there."
+    )
+    assigned_product = classify_complaint(chat, product_prompt)
     st.write(f"Assigned Product: {assigned_product}")
 
     # Step 2: Classify by Sub-product
     subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
-    response_subproduct = chat({"messages": [
-        {"role": "system", "content": (
-            f"You are a financial expert who classifies customer complaints based on these Sub-product categories under the product '{assigned_product}': {subproduct_options.tolist()}. "
-            "Respond with the exact sub-product as written there."
-        )},
-        {"role": "user", "content": f"This is my issue: '{client_complaint}'."}
-    ]})
-    assigned_subproduct = response_subproduct.strip()
+    subproduct_prompt = (
+        f"You are a financial expert who classifies customer complaints based on these Sub-product categories under the product '{assigned_product}': {subproduct_options.tolist()}. "
+        "Respond with the exact sub-product as written there."
+    )
+    assigned_subproduct = classify_complaint(chat, subproduct_prompt)
     st.write(f"Assigned Sub-product: {assigned_subproduct}")
 
     # Step 3: Classify by Issue
     issue_options = df1[
         (df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)
     ]['Issue'].unique()
-    response_issue = chat({"messages": [
-        {"role": "system", "content": (
-            f"You are a financial expert who classifies customer complaints based on these Issue categories under the product '{assigned_product}' and sub-product '{assigned_subproduct}': {issue_options.tolist()}. "
-            "Respond with the exact issue as written there."
-        )},
-        {"role": "user", "content": f"This is my issue: '{client_complaint}'."}
-    ]})
-    assigned_issue = response_issue.strip()
+    issue_prompt = (
+        f"You are a financial expert who classifies customer complaints based on these Issue categories under the product '{assigned_product}' and sub-product '{assigned_subproduct}': {issue_options.tolist()}. "
+        "Respond with the exact issue as written there."
+    )
+    assigned_issue = classify_complaint(chat, issue_prompt)
     st.write(f"Assigned Issue: {assigned_issue}")
 
     # Display Classification Results
