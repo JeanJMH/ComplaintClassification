@@ -136,8 +136,8 @@ if st.session_state.problem_described and st.session_state.product_described and
     try:
         # Setup Jira API credentials
         os.environ["JIRA_API_TOKEN"] = st.secrets["JIRA_API_TOKEN"]
-        os.environ["JIRA_USERNAME"] = "rich@bu.edu"
-        os.environ["JIRA_INSTANCE_URL"] = "https://is883-genai-r.atlassian.net/"
+        os.environ["JIRA_USERNAME"] = "jeanmh@bu.edu"
+        os.environ["JIRA_INSTANCE_URL"] = "https://jmhu.atlassian.net"
         os.environ["JIRA_CLOUD"] = "True"
 
         # Extract user description from memory buffer
@@ -152,7 +152,7 @@ if st.session_state.problem_described and st.session_state.product_described and
         assigned_issue = f"Managing my {st.session_state.product_described} Account"
         st.write(f"Assigned issue: {assigned_issue}")  # Debugging step
         question = (
-            f"Create a task in my project with the key FST. The task's type is 'Task', assigned to rich@bu.edu. "
+            f"Create a task in my project with the key LLMTS. The task's type is 'Task', assigned to rich@bu.edu. "
             f"The summary is '{assigned_issue}'. "
             f"Always assign 'Highest' priority if the issue is related to fraudulent activities. "
             f"Use 'High' priority for other issues. "
