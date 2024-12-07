@@ -56,6 +56,7 @@ def evaluate_input_details(chat, user_input, memory_messages):
         f"2. A specific issue or problem (e.g., 'fraudulent transactions', 'stolen card').\n\n"
         f"Respond naturally and warmly to acknowledge provided details and politely ask for any missing information, don't ask information not related with the product or issue."
         f"Finish collecting information when you have sufficient details for classify the complaint by product and issue."
+        f"if the user is not sharing any problem or issue, just finish the conversation"
     )
     return chat.predict(prompt).strip()
 
