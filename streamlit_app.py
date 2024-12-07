@@ -62,7 +62,7 @@ def evaluate_input_details(chat, user_input, memory_messages):
         f"2. A specific issue or problem (e.g., 'fraudulent transactions', 'stolen card').\n\n"
         f"Respond naturally and warmly to acknowledge provided details and politely ask for any missing information. "
         f"Conclude data collection once sufficient details for classification (product and issue) are provided."
-        f"If more information is not necessary, or the client say doesn't have more details say Thank you! This is the summary of your complaint. Please review the summary below and press the 'Submit' button to finalize."
+        f"If more information is not necessary, or the client say doesn't have more details say: "thank you! and provide a summary.  Then say to user press'Submit'botton your to send the complaint and finalize."
     )
     return chat.predict(prompt).strip()
 
