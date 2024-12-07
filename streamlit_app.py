@@ -101,30 +101,34 @@ if st.session_state.product_described and st.session_state.problem_described:
                 memory_messages = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.memory.chat_memory.messages])
 
                 # Step 1: Classify by Product
-                response_product = chat.predict(
-                    f"Based on this conversation: {memory_messages}\n"
-                    f"Classify the complaint by matching it to one of these Product categories: {product_categories.tolist()}."
+                product_categories = df1['Product'].unique()
+                product_prompt = (
+                    f"You are a financial expert who classifies customer complaints based on these Product categories: {product_categories.tolist()}. "
+                    "Respond with the exact product as written there."
                 )
-                assigned_product = response_product.strip()
-
+                assigned_product = classify_complaint(chat, product_prompt)
+                st.write(f"Assigned Product: {assigned_product}")
+            
                 # Step 2: Classify by Sub-product
                 subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
-                response_subproduct = chat.predict(
-                    f"Based on this conversation: {memory_messages}\n"
-                    f"Classify the complaint into one of these Sub-product categories under '{assigned_product}': {subproduct_options.tolist()}."
+                subproduct_prompt = (
+                    f"You are a financial expert who classifies customer complaints based on these Sub-product categories under the product '{assigned_product}': {subproduct_options.tolist()}. "
+                    "Respond with the exact sub-product as written there."
                 )
-                assigned_subproduct = response_subproduct.strip()
-
+                assigned_subproduct = classify_complaint(chat, subproduct_prompt)
+                st.write(f"Assigned Sub-product: {assigned_subproduct}")
+            
                 # Step 3: Classify by Issue
                 issue_options = df1[
                     (df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)
                 ]['Issue'].unique()
-                response_issue = chat.predict(
-                    f"Based on this conversation: {memory_messages}\n"
-                    f"Classify the complaint into one of these Issue categories under '{assigned_product}' and '{assigned_subproduct}': {issue_options.tolist()}."
+                issue_prompt = (
+                    f"You are a financial expert who classifies customer complaints based on these Issue categories under the product '{assigned_product}' and sub-product '{assigned_subproduct}': {issue_options.tolist()}. "
+                    "Respond with the exact issue as written there."
                 )
-                assigned_issue = response_issue.strip()
-
+                assigned_issue = classify_complaint(chat, issue_prompt)
+                st.write(f"Assigned Issue: {assigned_issue}")
+             
                 # Display Classification Results
                 classification_summary = (
                     f"Classification Results:\n"
