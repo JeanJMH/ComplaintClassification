@@ -11,18 +11,18 @@ from langchain_community.utilities.jira import JiraAPIWrapper
 from langchain_community.agent_toolkits.jira.toolkit import JiraToolkit
 from langchain import hub
 
-
-# Title and Description
 st.title("💬 Financial Complaint Classifier")
 st.write("A chatbot to classify customer complaints and create Jira tasks if needed.")
 
 # Initialize Session State
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-if "product" not in st.session_state:
-    st.session_state.product = None
-if "problem" not in st.session_state:
-    st.session_state.problem = None
+if "assigned_product" not in st.session_state:
+    st.session_state.assigned_product = None
+if "assigned_subproduct" not in st.session_state:
+    st.session_state.assigned_subproduct = None
+if "assigned_issue" not in st.session_state:
+    st.session_state.assigned_issue = None
 if "classification_started" not in st.session_state:
     st.session_state.classification_started = False
 
