@@ -87,8 +87,10 @@ if st.button("Start Classification"):
 
         # Step 1: Classify by Product
         product_prompt = (
-            f"You are a financial expert who classifies customer complaints based on these Product categories: {product_categories.tolist()}. "
-            "Respond with the exact product as written there."
+            f"Based on the user's complaint and the following conversation context:\n"
+            f"{memory_messages}\n\n"
+            f"You are a financial expert. Classify the user's complaint into one of these product categories: {product_categories.tolist()}.\n"
+            f"Respond with the exact product name as listed."
         )
         assigned_product = classify_complaint(chat, product_prompt)
         st.write(f"Assigned Product: {assigned_product}")
@@ -96,8 +98,10 @@ if st.button("Start Classification"):
         # Step 2: Classify by Sub-product
         subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
         subproduct_prompt = (
-            f"You are a financial expert who classifies customer complaints based on these Sub-product categories under the product '{assigned_product}': {subproduct_options.tolist()}. "
-            "Respond with the exact sub-product as written there."
+            f"Based on the user's complaint about '{assigned_product}' and the following context:\n"
+            f"{memory_messages}\n\n"
+            f"You are a financial expert. Classify the user's complaint into one of these sub-product categories: {subproduct_options.tolist()}.\n"
+            f"Respond with the exact sub-product name as listed."
         )
         assigned_subproduct = classify_complaint(chat, subproduct_prompt)
         st.write(f"Assigned Sub-product: {assigned_subproduct}")
@@ -107,8 +111,10 @@ if st.button("Start Classification"):
             (df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)
         ]['Issue'].unique()
         issue_prompt = (
-            f"You are a financial expert who classifies customer complaints based on these Issue categories under the product '{assigned_product}' and sub-product '{assigned_subproduct}': {issue_options.tolist()}. "
-            "Respond with the exact issue as written there."
+            f"Based on the user's complaint about '{assigned_product}' -> '{assigned_subproduct}' and the following context:\n"
+            f"{memory_messages}\n\n"
+            f"You are a financial expert. Classify the user's complaint into one of these issue categories: {issue_options.tolist()}.\n"
+            f"Respond with the exact issue name as listed."
         )
         assigned_issue = classify_complaint(chat, issue_prompt)
         st.write(f"Assigned Issue: {assigned_issue}")
@@ -130,6 +136,7 @@ if st.button("Start Classification"):
     except Exception as e:
         error_message = f"Error during classification: {e}"
         st.chat_message("assistant").write(error_message)
+
 
 # Summary Button
 if st.button("Show Classification Summary"):
