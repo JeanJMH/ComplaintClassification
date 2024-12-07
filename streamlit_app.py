@@ -13,19 +13,17 @@ from langchain import hub
 
 # Title and Description
 st.title("💬 Financial Complaint Classifier")
-st.write("A chatbot to classify customer complaints and create Jira tasks if needed.")
+st.write("Hi! I’m here to assist you in classifying your financial complaint. Let's get started!")
 
 # Initialize Session State
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "context_ready" not in st.session_state:
+    st.session_state.context_ready = False
 if "classification_started" not in st.session_state:
     st.session_state.classification_started = False
-if "context_collected" not in st.session_state:
-    st.session_state.context_collected = False
-if "product" not in st.session_state:
-    st.session_state.product = None
-if "issue" not in st.session_state:
-    st.session_state.issue = None
+if "context" not in st.session_state:
+    st.session_state.context = {"product": None, "issue": None}
 
 # Load Dataset
 url = "https://raw.githubusercontent.com/JeanJMH/Financial_Classification/main/Classification_data.csv"
@@ -38,83 +36,88 @@ except Exception as e:
 
 # Initialize OpenAI Chat
 try:
-    model_type = "gpt-4o-mini"
-    chat = ChatOpenAI(openai_api_key=st.secrets["OPENAI_API_KEY"], model=model_type)
+    chat = ChatOpenAI(openai_api_key=st.secrets["OPENAI_API_KEY"])
 except KeyError:
     st.error("API key missing! Please set 'OPENAI_API_KEY' in your Streamlit secrets.")
     st.stop()
-
-# Helper function to check missing details
-def check_missing_details(chat, user_input, product_categories):
-    prompt = (
-        f"You are a helpful assistant gathering information to classify customer complaints. "
-        f"Start the conversation always with a greeting and indicating you are here for helping, so you will star to collect information"
-        f"Determine if the following input provides details about both a product and an issue:\n\n"
-        f"Input: '{user_input}'\n\n"
-        f"Products: {', '.join(product_categories)}\n"
-        f"Issues: e.g., 'fraudulent transactions', 'stolen card', 'unauthorized charges'.\n\n"
-        f"Respond with one of the following:\n"
-        f"- 'Missing: Product'\n"
-        f"- 'Missing: Issue'\n"
-        f"- 'Complete: Both Product and Issue are provided.'\n\n"
-        f"Additionally, suggest the next step for the user to provide the missing details."
-    )
-    response = chat.predict(prompt, max_tokens=100).strip()
-    return response
 
 # Display Chat History
 st.write("### Chat History")
 for message in st.session_state.chat_history:
     st.chat_message(message["role"]).write(message["content"])
 
+# Helper function to evaluate and collect missing context
+def collect_context(chat, user_input, context):
+    """
+    Use GPT to collect missing context and update the session state.
+    """
+    prompt = (
+        f"You are a friendly assistant helping users classify financial complaints. Start each response with a warm greeting and explain that you're here to help them with their issue. "
+        f"Review the following user input and provide feedback about missing details or confirm that all details are complete. "
+        f"The user's input so far:\n\n"
+        f"Product: {context['product'] or 'None'}\n"
+        f"Issue: {context['issue'] or 'None'}\n\n"
+        f"The latest user input is: '{user_input}'\n\n"
+        f"Explain what is missing in a clear and polite way. Respond with:\n"
+        f"- A greeting and a request for the missing product or issue details (e.g., 'Could you let me know which product you're referring to, such as a credit card or mortgage?')\n"
+        f"- If all information is complete: A thank-you message confirming all details and mentioning that the support team will handle the case."
+    )
+    response = chat.predict(prompt).strip()
+    return response
+
 # Chat Input for Context Collection
-if not st.session_state.context_collected:
+if not st.session_state.classification_started:
     if user_input := st.chat_input("Describe your issue:"):
         st.session_state.chat_history.append({"role": "user", "content": user_input})
         st.chat_message("user").write(user_input)
 
-        # Check for missing details
-        product_categories = df1['Product'].unique()
-        evaluation_response = check_missing_details(chat, user_input, product_categories)
+        # Use GPT to collect missing context
+        response = collect_context(chat, user_input, st.session_state.context)
 
-        if "Complete" in evaluation_response:
-            st.session_state.context_collected = True
-            st.session_state.chat_history.append({"role": "assistant", "content": "Thank you! You have provided sufficient details. Click the 'Start Classification' button to begin."})
-            st.chat_message("assistant").write("Thank you! You have provided sufficient details. Click the 'Start Classification' button to begin.")
+        # Check if details are complete
+        if "support team will handle the case" in response.lower():
+            st.session_state.context_ready = True
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+            st.chat_message("assistant").write(response)
+
+            # Mark conversation as complete
+            st.session_state.classification_started = True
         else:
-            st.session_state.chat_history.append({"role": "assistant", "content": evaluation_response})
-            st.chat_message("assistant").write(evaluation_response)
+            # Update context dynamically
+            if "product" in response.lower() and st.session_state.context["product"] is None:
+                st.session_state.context["product"] = user_input
+            if "issue" in response.lower() and st.session_state.context["issue"] is None:
+                st.session_state.context["issue"] = user_input
 
-# Button to Start Classification Process
-if st.session_state.context_collected and not st.session_state.classification_started:
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+            st.chat_message("assistant").write(response)
+
+# Classification Process (Triggered by Button)
+if st.session_state.context_ready:
+    # Provide a final thank-you message after the classification button is clicked.
     if st.button("Start Classification"):
-        st.session_state.classification_started = True
+        st.session_state.chat_history.append({"role": "assistant", "content": "Starting the classification process..."})
+        st.chat_message("assistant").write("Starting the classification process...")
 
-        # Classification Process
         try:
-            user_input = st.session_state.chat_history[-1]["content"]
-
-            # Classify by Product
+            # Step 1: Classify by Product
             product_categories = df1['Product'].unique()
             response_product = chat.predict(
-                f"You are a financial expert who classifies customer complaints based on these Product categories: {product_categories.tolist()}. "
-                f"Complaint: {user_input}. Respond with the exact product as written there."
+                f"You are a financial expert classifying complaints. Classify the following complaint based on these Product categories: {product_categories.tolist()}.\n\nComplaint: {st.session_state.context['product']}. Respond with the exact product as written there."
             )
             assigned_product = response_product.strip()
 
-            # Classify by Sub-product
+            # Step 2: Classify by Sub-product
             subproduct_options = df1[df1['Product'] == assigned_product]['Sub-product'].unique()
             response_subproduct = chat.predict(
-                f"You are a financial expert who classifies customer complaints based on these Sub-product categories under the product '{assigned_product}': {subproduct_options.tolist()}. "
-                f"Complaint: {user_input}. Respond with the exact sub-product as written there."
+                f"Classify the complaint based on these Sub-product categories under the product '{assigned_product}': {subproduct_options.tolist()}.\n\nComplaint: {st.session_state.context['issue']}. Respond with the exact sub-product as written there."
             )
             assigned_subproduct = response_subproduct.strip()
 
-            # Classify by Issue
+            # Step 3: Classify by Issue
             issue_options = df1[(df1['Product'] == assigned_product) & (df1['Sub-product'] == assigned_subproduct)]['Issue'].unique()
             response_issue = chat.predict(
-                f"You are a financial expert who classifies customer complaints based on these Issue categories under the product '{assigned_product}' and sub-product '{assigned_subproduct}': {issue_options.tolist()}. "
-                f"Complaint: {user_input}. Respond with the exact issue as written there."
+                f"Classify the complaint based on these Issue categories under the product '{assigned_product}' and sub-product '{assigned_subproduct}': {issue_options.tolist()}.\n\nComplaint: {st.session_state.context['issue']}. Respond with the exact issue as written there."
             )
             assigned_issue = response_issue.strip()
 
@@ -128,7 +131,8 @@ if st.session_state.context_collected and not st.session_state.classification_st
                 f"Classification Results:\n"
                 f"- **Product**: {assigned_product}\n"
                 f"- **Sub-product**: {assigned_subproduct}\n"
-                f"- **Issue**: {assigned_issue}"
+                f"- **Issue**: {assigned_issue}\n\n"
+                f"Thank you for providing the details! Our support team will contact you to resolve your case. Goodbye!"
             )
             st.session_state.chat_history.append({"role": "assistant", "content": classification_summary})
             st.chat_message("assistant").write(classification_summary)
@@ -137,10 +141,3 @@ if st.session_state.context_collected and not st.session_state.classification_st
             error_message = f"Error during classification: {e}"
             st.session_state.chat_history.append({"role": "assistant", "content": error_message})
             st.chat_message("assistant").write(error_message)
-
-# Summary Button
-if st.button("Show Classification Summary"):
-    st.write("### Classification Summary")
-    st.write(f"- **Product**: {st.session_state.get('assigned_product', 'N/A')}")
-    st.write(f"- **Sub-product**: {st.session_state.get('assigned_subproduct', 'N/A')}")
-    st.write(f"- **Issue**: {st.session_state.get('assigned_issue', 'N/A')}")
