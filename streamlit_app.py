@@ -48,6 +48,7 @@ except KeyError:
 def check_missing_details(chat, user_input, product_categories):
     prompt = (
         f"You are a helpful assistant gathering information to classify customer complaints. "
+        f"Start the conversation always with a greeting and indicating you are here for helping, so you will star to collect information"
         f"Determine if the following input provides details about both a product and an issue:\n\n"
         f"Input: '{user_input}'\n\n"
         f"Products: {', '.join(product_categories)}\n"
